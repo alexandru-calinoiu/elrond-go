@@ -785,7 +785,7 @@ func (netMes *networkMessenger) pubsubCallback(handler p2p.MessageProcessor, top
 
 		err = handler.ProcessReceivedMessage(msg, fromConnectedPeer)
 		if err != nil {
-			log.Trace("p2p validator",
+			log.Debug("p2p validator",
 				"error", err.Error(),
 				"topic", message.Topic,
 				"originator", p2p.MessageOriginatorPid(msg),
@@ -1009,7 +1009,7 @@ func (netMes *networkMessenger) directMessageHandler(message *pubsub.Message, fr
 		// a separate sequence counter for direct sender
 		errProcess := processor.ProcessReceivedMessage(msg, fromConnectedPeer)
 		if errProcess != nil {
-			log.Trace("p2p validator",
+			log.Debug("p2p validator",
 				"error", errProcess.Error(),
 				"topic", msg.Topic(),
 				"originator", p2p.MessageOriginatorPid(msg),

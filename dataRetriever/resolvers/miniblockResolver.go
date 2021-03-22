@@ -1,6 +1,7 @@
 package resolvers
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	logger "github.com/ElrondNetwork/elrond-go-logger"
@@ -111,6 +112,8 @@ func (mbRes *miniblockResolver) ProcessReceivedMessage(message p2p.MessageP2P, f
 }
 
 func (mbRes *miniblockResolver) resolveMbRequestByHash(hash []byte, pid core.PeerID) error {
+	log.Debug("miniblockResolver.resolveMbRequestByHash", "hash", hash)
+
 	mb, err := mbRes.fetchMbAsByteSlice(hash)
 	if err != nil {
 		return err
@@ -123,6 +126,8 @@ func (mbRes *miniblockResolver) resolveMbRequestByHash(hash []byte, pid core.Pee
 	if err != nil {
 		return err
 	}
+
+	log.Debug("miniblockResolver.resolveMbRequestByHash", "hash", hash, "found, slice", buffToSend)
 
 	return mbRes.Send(buffToSend, pid)
 }
@@ -150,6 +155,8 @@ func (mbRes *miniblockResolver) fetchMbAsByteSlice(hash []byte) ([]byte, error) 
 }
 
 func (mbRes *miniblockResolver) resolveMbRequestByHashArray(mbBuff []byte, pid core.PeerID) error {
+	log.Debug("miniblockResolver.resolveMbRequestByHashArray", "mbBuff", mbBuff)
+
 	b := batch.Batch{}
 	err := mbRes.marshalizer.Unmarshal(&b, mbBuff)
 	if err != nil {
@@ -161,6 +168,8 @@ func (mbRes *miniblockResolver) resolveMbRequestByHashArray(mbBuff []byte, pid c
 	errorsFound := 0
 	mbsBuffSlice := make([][]byte, 0, len(hashes))
 	for _, hash := range hashes {
+		log.Debug("miniblockResolver.resolveMbRequestByHashArray", "hash", hash)
+
 		mb, errTemp := mbRes.fetchMbAsByteSlice(hash)
 		if errTemp != nil {
 			errFetch = fmt.Errorf("%w for hash %s", errTemp, logger.DisplayByteSlice(hash))
@@ -171,6 +180,8 @@ func (mbRes *miniblockResolver) resolveMbRequestByHashArray(mbBuff []byte, pid c
 
 			continue
 		}
+
+		log.Debug("miniblockResolver.resolveMbRequestByHashArray", "hash", hash, "found, slice", mb)
 		mbsBuffSlice = append(mbsBuffSlice, mb)
 	}
 
@@ -195,6 +206,8 @@ func (mbRes *miniblockResolver) resolveMbRequestByHashArray(mbBuff []byte, pid c
 
 // RequestDataFromHash requests a block body from other peers having input the block body hash
 func (mbRes *miniblockResolver) RequestDataFromHash(hash []byte, epoch uint32) error {
+	log.Debug("miniblockResolver.RequestDataFromHash hash:\n" + hex.EncodeToString(hash))
+
 	return mbRes.SendOnRequestTopic(
 		&dataRetriever.RequestData{
 			Type:  dataRetriever.HashType,
@@ -207,6 +220,13 @@ func (mbRes *miniblockResolver) RequestDataFromHash(hash []byte, epoch uint32) e
 
 // RequestDataFromHashArray requests a block body from other peers having input the block body hash
 func (mbRes *miniblockResolver) RequestDataFromHashArray(hashes [][]byte, _ uint32) error {
+	requested := ""
+	for _, hash := range hashes {
+		requested += fmt.Sprintf(" %s\n", hex.EncodeToString(hash))
+	}
+
+	log.Debug("miniblockResolver.RequestDataFromHashArray hashes:\n" + requested)
+
 	b := &batch.Batch{
 		Data: hashes,
 	}
