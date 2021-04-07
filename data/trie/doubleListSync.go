@@ -192,6 +192,7 @@ func (d *doubleListTrieSyncer) resetWatchdog() {
 func (d *doubleListTrieSyncer) getNode(hash []byte) (node, error) {
 	n, ok := d.interceptedNodes.Get(hash)
 	if ok {
+		d.interceptedNodes.Remove(hash)
 		return trieNode(n)
 	}
 
