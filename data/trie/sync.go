@@ -10,6 +10,8 @@ import (
 	"github.com/ElrondNetwork/elrond-go/core"
 	"github.com/ElrondNetwork/elrond-go/core/check"
 	"github.com/ElrondNetwork/elrond-go/data"
+	"github.com/ElrondNetwork/elrond-go/hashing"
+	"github.com/ElrondNetwork/elrond-go/marshal"
 	"github.com/ElrondNetwork/elrond-go/storage"
 )
 
@@ -27,7 +29,9 @@ type trieSyncer struct {
 	rootHash                  []byte
 	nodesForTrie              map[string]trieNodeInfo
 	waitTimeBetweenRequests   time.Duration
-	trie                      *patriciaMerkleTrie
+	marshalizer               marshal.Marshalizer
+	hasher                    hashing.Hasher
+	db                        data.DBWriteCacher
 	requestHandler            RequestHandler
 	interceptedNodes          storage.Cacher
 	mutOperation              sync.RWMutex
@@ -43,9 +47,11 @@ const minTimeoutBetweenNodesCommits = time.Second
 
 // ArgTrieSyncer is the argument for the trie syncer
 type ArgTrieSyncer struct {
+	Marshalizer                    marshal.Marshalizer
+	Hasher                         hashing.Hasher
+	DB                             data.DBWriteCacher
 	RequestHandler                 RequestHandler
 	InterceptedNodes               storage.Cacher
-	Trie                           data.Trie
 	ShardId                        uint32
 	Topic                          string
 	TrieSyncStatistics             data.SyncStatisticsHandler
@@ -55,20 +61,44 @@ type ArgTrieSyncer struct {
 
 // NewTrieSyncer creates a new instance of trieSyncer
 func NewTrieSyncer(arg ArgTrieSyncer) (*trieSyncer, error) {
-	err := checkArguments(arg)
-	if err != nil {
-		return nil, err
+	if check.IfNil(arg.RequestHandler) {
+		return nil, ErrNilRequestHandler
 	}
-
-	pmt, ok := arg.Trie.(*patriciaMerkleTrie)
-	if !ok {
-		return nil, ErrWrongTypeAssertion
+	if check.IfNil(arg.InterceptedNodes) {
+		return nil, data.ErrNilCacher
+	}
+	if len(arg.Topic) == 0 {
+		return nil, ErrInvalidTrieTopic
+	}
+	if check.IfNil(arg.TrieSyncStatistics) {
+		return nil, ErrNilTrieSyncStatistics
+	}
+	if arg.TimeoutBetweenTrieNodesCommits < minTimeoutBetweenNodesCommits {
+		return nil, fmt.Errorf("%w provided: %v, minimum %v",
+			ErrInvalidTimeout, arg.TimeoutBetweenTrieNodesCommits, minTimeoutBetweenNodesCommits)
+	}
+	if arg.MaxHardCapForMissingNodes < 1 {
+		return nil, fmt.Errorf("%w provided: %v", ErrInvalidMaxHardCapForMissingNodes, arg.MaxHardCapForMissingNodes)
+	}
+	if check.IfNil(arg.DB) {
+		//todo extract var here
+		return nil, fmt.Errorf("nil db")
+	}
+	if check.IfNil(arg.Marshalizer) {
+		//todo extract var here
+		return nil, fmt.Errorf("nil marshalizer")
+	}
+	if check.IfNil(arg.Hasher) {
+		//todo extract var here
+		return nil, fmt.Errorf("nil hasher")
 	}
 
 	ts := &trieSyncer{
 		requestHandler:            arg.RequestHandler,
 		interceptedNodes:          arg.InterceptedNodes,
-		trie:                      pmt,
+		db:                        arg.DB,
+		marshalizer:               arg.Marshalizer,
+		hasher:                    arg.Hasher,
 		nodesForTrie:              make(map[string]trieNodeInfo),
 		topic:                     arg.Topic,
 		shardId:                   arg.ShardId,
@@ -82,6 +112,7 @@ func NewTrieSyncer(arg ArgTrieSyncer) (*trieSyncer, error) {
 	return ts, nil
 }
 
+//TODO use this
 func checkArguments(arg ArgTrieSyncer) error {
 	if check.IfNil(arg.RequestHandler) {
 		return ErrNilRequestHandler
@@ -135,7 +166,7 @@ func (ts *trieSyncer) StartSyncing(rootHash []byte, ctx context.Context) error {
 
 		numUnResolved := ts.requestNodes()
 		if !shouldRetryAfterRequest && numUnResolved == 0 {
-			return ts.trie.Commit()
+			return nil
 		}
 
 		select {
@@ -212,7 +243,7 @@ func (ts *trieSyncer) checkIfSynced() (bool, error) {
 				continue
 			}
 
-			nextNodes, err = currentNode.getChildren(ts.trie.trieStorage.Database())
+			nextNodes, err = currentNode.getChildren(ts.db)
 			if err != nil {
 				return false, err
 			}
@@ -222,20 +253,13 @@ func (ts *trieSyncer) checkIfSynced() (bool, error) {
 
 			delete(ts.nodesForTrie, nodeHash)
 
-			err = encodeNodeAndCommitToDB(currentNode, ts.trie.trieStorage.Database())
+			err = encodeNodeAndCommitToDB(currentNode, ts.db)
 			if err != nil {
 				return false, err
 			}
 			ts.resetWatchdog()
 
 			if !ts.rootFound && bytes.Equal([]byte(nodeHash), ts.rootHash) {
-				var collapsedRoot node
-				collapsedRoot, err = currentNode.getCollapsed()
-				if err != nil {
-					return false, err
-				}
-
-				ts.trie.root = collapsedRoot
 				ts.rootFound = true
 			}
 		}
@@ -281,11 +305,6 @@ func (ts *trieSyncer) addNew(nextNodes []node) bool {
 	return newElement
 }
 
-// Trie returns the synced trie
-func (ts *trieSyncer) Trie() data.Trie {
-	return ts.trie
-}
-
 func (ts *trieSyncer) getNode(hash []byte) (node, error) {
 	nodeInfo, ok := ts.nodesForTrie[string(hash)]
 	if ok && nodeInfo.received {
@@ -294,10 +313,11 @@ func (ts *trieSyncer) getNode(hash []byte) (node, error) {
 
 	n, ok := ts.interceptedNodes.Get(hash)
 	if ok {
+		ts.interceptedNodes.Remove(hash)
 		return trieNode(n)
 	}
 
-	existingNode, err := getNodeFromDBAndDecode(hash, ts.trie.trieStorage.Database(), ts.trie.marshalizer, ts.trie.hasher)
+	existingNode, err := getNodeFromDBAndDecode(hash, ts.db, ts.marshalizer, ts.hasher)
 	if err != nil {
 		return nil, ErrNodeNotFound
 	}

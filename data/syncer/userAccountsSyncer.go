@@ -144,19 +144,13 @@ func (u *userAccountsSyncer) syncAccountDataTries(rootHashes [][]byte, ssh data.
 
 func (u *userAccountsSyncer) syncDataTrie(rootHash []byte, ssh data.SyncStatisticsHandler, ctx context.Context) error {
 	u.throttler.StartProcessing()
+	defer u.throttler.EndProcessing()
 
 	u.syncerMutex.Lock()
 	_, ok := u.dataTries[string(rootHash)]
 	if ok {
 		u.syncerMutex.Unlock()
-		u.throttler.EndProcessing()
 		return nil
-	}
-
-	dataTrie, err := trie.NewTrie(u.trieStorageManager, u.marshalizer, u.hasher, u.maxTrieLevelInMemory)
-	if err != nil {
-		u.syncerMutex.Unlock()
-		return err
 	}
 
 	u.dataTries[string(rootHash)] = struct{}{}
@@ -165,7 +159,9 @@ func (u *userAccountsSyncer) syncDataTrie(rootHash []byte, ssh data.SyncStatisti
 	arg := trie.ArgTrieSyncer{
 		RequestHandler:                 u.requestHandler,
 		InterceptedNodes:               u.cacher,
-		Trie:                           dataTrie,
+		DB:                             u.trieStorageManager.Database(),
+		Marshalizer:                    u.marshalizer,
+		Hasher:                         u.hasher,
 		ShardId:                        u.shardId,
 		Topic:                          factory.AccountTrieNodesTopic,
 		TrieSyncStatistics:             ssh,
@@ -182,8 +178,6 @@ func (u *userAccountsSyncer) syncDataTrie(rootHash []byte, ssh data.SyncStatisti
 	if err != nil {
 		return err
 	}
-
-	u.throttler.EndProcessing()
 
 	return nil
 }
