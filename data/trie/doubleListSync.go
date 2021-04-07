@@ -3,7 +3,6 @@ package trie
 import (
 	"bytes"
 	"context"
-	"runtime"
 	"sync"
 	"time"
 
@@ -95,7 +94,6 @@ func (d *doubleListTrieSyncer) StartSyncing(rootHash []byte, ctx context.Context
 			return err
 		}
 		if isSynced {
-			runtime.GC()
 			return nil
 		}
 

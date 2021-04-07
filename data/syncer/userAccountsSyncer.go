@@ -3,6 +3,7 @@ package syncer
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sync"
 	"time"
 
@@ -88,6 +89,7 @@ func (u *userAccountsSyncer) SyncAccounts(rootHash []byte) error {
 	}
 
 	log.Debug("main trie synced, starting to sync data tries", "num data tries", len(u.dataTries))
+	runtime.GC()
 
 	rootHashes, err := u.findAllAccountRootHashes(mainTrie, ctx)
 	if err != nil {
