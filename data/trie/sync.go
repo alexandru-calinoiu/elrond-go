@@ -120,9 +120,6 @@ func checkArguments(arg ArgTrieSyncer) error {
 	if check.IfNil(arg.InterceptedNodes) {
 		return data.ErrNilCacher
 	}
-	if check.IfNil(arg.Trie) {
-		return ErrNilTrie
-	}
 	if len(arg.Topic) == 0 {
 		return ErrInvalidTrieTopic
 	}
