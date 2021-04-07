@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"runtime"
 	"time"
 
 	logger "github.com/ElrondNetwork/elrond-go-logger"
@@ -641,7 +640,6 @@ func (e *epochStartBootstrap) requestAndProcessing() (Parameters, error) {
 
 	log.Debug("removing cached received trie nodes")
 	e.dataPool.TrieNodes().Clear()
-	runtime.GC()
 
 	//TODO remove this sleep
 	time.Sleep(time.Second * 5)

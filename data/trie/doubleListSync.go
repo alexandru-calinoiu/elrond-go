@@ -3,7 +3,6 @@ package trie
 import (
 	"bytes"
 	"context"
-	"runtime"
 	"sync"
 	"time"
 
@@ -149,8 +148,6 @@ func (d *doubleListTrieSyncer) processMissingHashes() {
 
 		d.existingNodes[string(n.getHash())] = n
 	}
-
-	runtime.GC()
 }
 
 func (d *doubleListTrieSyncer) processExistingNodes() error {
@@ -185,8 +182,6 @@ func (d *doubleListTrieSyncer) processExistingNodes() error {
 			d.missingHashes[string(missingHash)] = struct{}{}
 		}
 	}
-
-	runtime.GC()
 
 	return nil
 }

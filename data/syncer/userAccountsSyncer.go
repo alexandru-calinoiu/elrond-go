@@ -82,6 +82,18 @@ func (u *userAccountsSyncer) SyncAccounts(rootHash []byte) error {
 
 	tss := statistics.NewTrieSyncStatistics()
 	go u.printStatistics(tss, ctx)
+	ctxGC, cancelGC := context.WithCancel(context.Background())
+	defer cancelGC()
+	go func() {
+		for {
+			select {
+			case <-ctxGC.Done():
+				return
+			case <-time.After(time.Second * 20):
+				runtime.GC()
+			}
+		}
+	}()
 
 	mainTrie, err := u.syncMainTrie(rootHash, factory.AccountTrieNodesTopic, tss, ctx)
 	if err != nil {
@@ -89,7 +101,6 @@ func (u *userAccountsSyncer) SyncAccounts(rootHash []byte) error {
 	}
 
 	log.Debug("main trie synced, starting to sync data tries", "num data tries", len(u.dataTries))
-	runtime.GC()
 
 	rootHashes, err := u.findAllAccountRootHashes(mainTrie, ctx)
 	if err != nil {
